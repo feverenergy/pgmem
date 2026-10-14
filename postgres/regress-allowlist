@@ -1,0 +1,9 @@
+# Known differences in PostgreSQL 17.11's parallel_schedule under pgmem
+# (make regress). One line per test: <test> <sha256 of its normalized
+# regression.diffs section> <reason>. regress-check (internal/cmd/regress-check)
+# fails the run on a failing test not listed here, on a listed test whose
+# diff hash changed, and on a listed test that now passes.
+
+select_parallel 7c6217d784e1d04177014e1dae75453456b33f6dfdb018108bdd772683c4d2de parallel query is off because max_parallel_workers=0, so the plan shows Workers Launched 0, not 4
+subscription b43c3da6e3ef63028f9764a31dfc70a6d49af524481c875f2dea764084c70d12 logical replication is not linked in, so CREATE SUBSCRIPTION cannot load libpqwalreceiver
+object_address 7e7afb13d5d40c4253743b321ee8f6cb2c027f81bd57965aa3c0690a5537bbc4 logical replication is not linked in, so CREATE SUBSCRIPTION cannot load libpqwalreceiver

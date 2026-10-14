@@ -1,0 +1,55 @@
+# pgmem toolchain: builds the WebAssembly Postgres and runs the Go tests on
+# Linux. Every input is pinned in build/versions.env; build with
+# `make toolchain`.
+ARG UBUNTU_DIGEST
+FROM docker.io/library/ubuntu@${UBUNTU_DIGEST}
+
+ARG TARGETARCH
+ARG UBUNTU_SNAPSHOT
+ARG BISON_VERSION
+ARG FLEX_VERSION
+ARG MAKE_VERSION
+ARG WASI_SDK_VERSION
+ARG WASI_SDK_SHA256_ARM64
+ARG WASI_SDK_SHA256_AMD64
+ARG GO_VERSION
+ARG GO_SHA256_ARM64
+ARG GO_SHA256_AMD64
+ARG PG_VERSION
+ARG PG_SHA256
+
+# ca-certificates comes from the live archive because the snapshot is HTTPS
+# only; everything else comes from the snapshot at exact versions. Postgres 17
+# tarballs no longer ship generated parsers, so bison and flex affect output.
+# zic comes from the base image's libc-bin, which the digest already fixes.
+# There is deliberately no native C compiler: everything is cross-compiled.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get update --snapshot "${UBUNTU_SNAPSHOT}" \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      "bison=${BISON_VERSION}" "flex=${FLEX_VERSION}" "make=${MAKE_VERSION}" \
+      bzip2 curl patch perl \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; \
+    case "${TARGETARCH}" in \
+      arm64) sdk_arch=arm64; sdk_sha="${WASI_SDK_SHA256_ARM64}"; go_sha="${GO_SHA256_ARM64}" ;; \
+      amd64) sdk_arch=x86_64; sdk_sha="${WASI_SDK_SHA256_AMD64}"; go_sha="${GO_SHA256_AMD64}" ;; \
+      *) echo "unsupported TARGETARCH ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    sdk="wasi-sdk-${WASI_SDK_VERSION}.0-${sdk_arch}-linux"; \
+    curl -fsSLo /tmp/sdk.tar.gz "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${sdk}.tar.gz"; \
+    echo "${sdk_sha}  /tmp/sdk.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/sdk.tar.gz -C /opt; \
+    mv "/opt/${sdk}" /opt/wasi-sdk; \
+    rm /tmp/sdk.tar.gz; \
+    curl -fsSLo /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
+    echo "${go_sha}  /tmp/go.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/go.tar.gz -C /usr/local; \
+    rm /tmp/go.tar.gz; \
+    mkdir -p /opt/src; \
+    curl -fsSLo "/opt/src/postgresql-${PG_VERSION}.tar.bz2" \
+      "https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.bz2"; \
+    echo "${PG_SHA256}  /opt/src/postgresql-${PG_VERSION}.tar.bz2" | sha256sum -c -
+
+ENV PATH=/usr/local/go/bin:/opt/wasi-sdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

@@ -1,0 +1,4 @@
+# src/makefiles/Makefile.wasi
+#
+# pgmem links everything statically: no rpath and no shared libraries.
+rpath =

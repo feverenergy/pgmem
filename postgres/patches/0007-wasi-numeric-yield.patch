@@ -1,0 +1,46 @@
+--- a/src/backend/utils/adt/numeric.c
++++ b/src/backend/utils/adt/numeric.c
+@@ -8876,6 +8876,18 @@
+ 			int			i2limit = Min(var2ndigits, res_ndigits - i1 - 2);
+ 			int		   *dig_i1_2 = &dig[i1 + 2];
+ 
++#ifdef __wasi__
++
++			/*
++			 * pgmem: this loop never reaches CHECK_FOR_INTERRUPTS, so with
++			 * 16,000-digit operands the whole multiplication would hold off
++			 * Go's stop-the-world for over 10 ms. Poll once per 64 digits
++			 * here rather than inside the loop, which would make it more
++			 * than twice as slow.
++			 */
++			for (int pgmem_n = 0; pgmem_n < i2limit; pgmem_n += 64)
++				PGMEM_CFI_POLL();
++#endif
+ 			for (i2 = 0; i2 < i2limit; i2++)
+ 				dig_i1_2[i2] += var1digit * var2digits[i2];
+ 		}
+@@ -9145,6 +9157,12 @@
+ 		{
+ 			NumericDigit *dividend_j = &dividend[j];
+ 
++#ifdef __wasi__
++			/* pgmem: poll once per 64 digits, as in mul_var. */
++			for (int pgmem_n = 0; pgmem_n <= var2ndigits; pgmem_n += 64)
++				PGMEM_CFI_POLL();
++#endif
++
+ 			/*
+ 			 * Multiply the divisor by qhat, and subtract that from the
+ 			 * working dividend.  The multiplication and subtraction are
+@@ -9501,6 +9519,11 @@
+ 				int			istop = Min(var2ndigits, div_ndigits - qi + 1);
+ 				int		   *div_qi = &div[qi];
+ 
++#ifdef __wasi__
++				/* pgmem: poll once per 64 digits, as in mul_var. */
++				for (int pgmem_n = 0; pgmem_n < istop; pgmem_n += 64)
++					PGMEM_CFI_POLL();
++#endif
+ 				for (i = 0; i < istop; i++)
+ 					div_qi[i] -= ((NumericDigit) qdigit) * var2digits[i];
+ 			}

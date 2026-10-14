@@ -1,0 +1,141 @@
+--- a/src/include/miscadmin.h
++++ b/src/include/miscadmin.h
+@@ -301,6 +301,51 @@
+ extern void check_stack_depth(void);
+ extern bool stack_is_too_deep(void);
+ 
++#ifdef __wasi__
++/*
++ * pgmem: under WebAssembly, stack_is_too_deep() sees only the shadow stack in
++ * linear memory, which holds just the locals whose address is taken. The
++ * engine's own stack (wazero's) holds everything else. It grows 3 to 16
++ * times faster, and the JSON parser's recursion puts nothing on the shadow
++ * stack at all, so a deep enough input overflowed the engine stack, a trap
++ * that crashes the backend, without ever reaching max_stack_depth.
++ *
++ * So every depth check reserves PGMEM_STACK_CHECK_PAD bytes of shadow stack
++ * in its caller's frame, for as long as that frame lives. A recursion that
++ * checks its depth once per level, as Postgres's recursions do, then grows
++ * the shadow stack by at least that much per level, and max_stack_depth
++ * bounds its depth. 256 bytes keeps the engine stack within about 4 times
++ * the shadow stack for every recursion measured (JSON, jsonb, plpgsql, SQL
++ * functions, expressions, set operations, regular expressions). Postgres's
++ * own frames stay where they were: unwinding, including longjmp, releases
++ * the pads with them. The pad is never touched; storing its address keeps
++ * the compiler from dropping it. get_stack_depth_rlimit() in postgres.c
++ * sets the matching max_stack_depth.
++ *
++ * The invariant: the check must sit in a frame that stays live across the
++ * recursive call, so that each level's pad is still reserved while the
++ * next level runs. A check made in a helper that returns before the
++ * recursion releases its pad at once and bounds nothing. The bound is
++ * empirical: kinds not probed include deeply nested plans of other node
++ * types, nested subqueries and views, deep parse trees outside
++ * expressions, XML and jsonpath, and array and record I/O.
++ */
++#define PGMEM_STACK_CHECK_PAD 256
++extern char *volatile pgmem_stack_pad_sink;
++#define check_stack_depth() \
++	do { \
++		char		pgmem_stack_pad_[PGMEM_STACK_CHECK_PAD]; \
++		pgmem_stack_pad_sink = pgmem_stack_pad_; \
++		(check_stack_depth) (); \
++	} while (0)
++#define stack_is_too_deep() \
++	({ \
++		char		pgmem_stack_pad_[PGMEM_STACK_CHECK_PAD]; \
++		pgmem_stack_pad_sink = pgmem_stack_pad_; \
++		(stack_is_too_deep) (); \
++	})
++#endif
++
+ /* in tcop/utility.c */
+ extern void PreventCommandIfReadOnly(const char *cmdname);
+ extern void PreventCommandIfParallelMode(const char *cmdname);
+--- a/src/backend/tcop/postgres.c
++++ b/src/backend/tcop/postgres.c
+@@ -3559,8 +3559,14 @@
+  * check_stack_depth() just throws an error summarily.  stack_is_too_deep()
+  * can be used by code that wants to handle the error condition itself.
+  */
++#ifdef __wasi__
++/* pgmem: see check_stack_depth() in miscadmin.h */
++char	   *volatile pgmem_stack_pad_sink;
++#endif
++
++/* The parentheses keep pgmem's macros in miscadmin.h from expanding. */
+ void
+-check_stack_depth(void)
++(check_stack_depth) (void)
+ {
+ 	if (stack_is_too_deep())
+ 	{
+@@ -3574,7 +3580,7 @@
+ }
+ 
+ bool
+-stack_is_too_deep(void)
++(stack_is_too_deep) (void)
+ {
+ #ifndef HAVE__BUILTIN_FRAME_ADDRESS
+ 	char		stack_top_loc;
+@@ -3631,7 +3637,13 @@
+ 	{
+ 		GUC_check_errdetail("\"max_stack_depth\" must not exceed %ldkB.",
+ 							(stack_rlimit - STACK_DEPTH_SLOP) / 1024L);
++#ifdef __wasi__
++		/* pgmem: no ulimit applies; see get_stack_depth_rlimit(). */
++		GUC_check_errhint("pgmem caps \"max_stack_depth\" at %ldkB.",
++						  (stack_rlimit - STACK_DEPTH_SLOP) / 1024L);
++#else
+ 		GUC_check_errhint("Increase the platform's stack depth limit via \"ulimit -s\" or local equivalent.");
++#endif
+ 		return false;
+ 	}
+ 	return true;
+@@ -5067,7 +5079,20 @@
+ long
+ get_stack_depth_rlimit(void)
+ {
+-#if defined(HAVE_GETRLIMIT)
++#if defined(__wasi__)
++
++	/*
++	 * pgmem: the depth that is safe here is set by wazero, not by the 8 MB
++	 * shadow stack that getrlimit() reports. Each active PG_TRY holds a copy
++	 * of the whole engine stack, so a plpgsql recursion takes memory that
++	 * grows with the square of its depth: about 0.5 GB at 250 levels. With
++	 * the pads of check_stack_depth() (miscadmin.h), 1 MB less
++	 * STACK_DEPTH_SLOP gives max_stack_depth a default and a maximum of
++	 * 512kB: about 250 plpgsql levels and 2000 levels of JSON nesting, and
++	 * in every recursion measured, an engine stack of at most about 2 MB.
++	 */
++	return 1024 * 1024L;
++#elif defined(HAVE_GETRLIMIT)
+ 	static long val = 0;
+ 
+ 	/* This won't change after process launch, so check just once */
+--- a/src/include/regex/regguts.h
++++ b/src/include/regex/regguts.h
+@@ -533,8 +533,21 @@
+ 	int			FUNCPTR(stack_too_deep, (void));
+ };
+ 
++#ifdef __wasi__
++/*
++ * pgmem: a pad, as for check_stack_depth() in miscadmin.h, which
++ * regcustom.h includes and which defines the pad's size and sink.
++ */
+ #define STACK_TOO_DEEP(re)	\
++	({ \
++		char		pgmem_stack_pad_[PGMEM_STACK_CHECK_PAD]; \
++		pgmem_stack_pad_sink = pgmem_stack_pad_; \
++		(*((struct fns *) (re)->re_fns)->stack_too_deep) (); \
++	})
++#else
++#define STACK_TOO_DEEP(re)	\
+ 	((*((struct fns *) (re)->re_fns)->stack_too_deep) ())
++#endif
+ 
+ 
+ /*

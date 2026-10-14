@@ -1,0 +1,13 @@
+.DS_Store
+
+# Build outputs (make wasm, make repro)
+/build/out/
+
+# go test -c binaries, profiles and coverage files
+*.test
+*.prof
+*.out
+
+# Local workspaces
+go.work
+go.work.sum

@@ -1,0 +1,14 @@
+# src/template/wasi
+#
+# WebAssembly (wasm32-wasip1-threads) for pgmem. The POSIX pieces wasi-libc
+# lacks come from pgmem's compat layer (postgres/compat in the pgmem repo).
+
+# Unnamed POSIX semaphores compile against wasi-libc. pgmem's compat layer
+# backs them with host semaphores that every process shares.
+if test x"$PREFERRED_SEMAPHORES" = x"" ; then
+  PREFERRED_SEMAPHORES=UNNAMED_POSIX
+fi
+
+# EXEC_BACKEND: postmaster children start as new pgmem processes
+# (launch_backend.c, patch 0003) instead of fork().
+CPPFLAGS="$CPPFLAGS -D_GNU_SOURCE -DEXEC_BACKEND"

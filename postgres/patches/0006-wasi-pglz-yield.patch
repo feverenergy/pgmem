@@ -1,0 +1,19 @@
+--- a/src/common/pg_lzcompress.c
++++ b/src/common/pg_lzcompress.c
+@@ -608,6 +608,16 @@
+ 	 */
+ 	while (dp < dend)
+ 	{
++#ifdef __wasi__
++
++		/*
++		 * pgmem: this loop never reaches CHECK_FOR_INTERRUPTS, so it would
++		 * hold off Go's stop-the-world for its whole run (about 100 ms for a
++		 * 6 MB value). Yield to the host now and then.
++		 */
++		PGMEM_CFI_POLL();
++#endif
++
+ 		/*
+ 		 * If we already exceeded the maximum result size, fail.
+ 		 *

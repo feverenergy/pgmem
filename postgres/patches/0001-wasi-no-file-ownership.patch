@@ -1,0 +1,15 @@
+--- a/src/backend/utils/init/miscinit.c
++++ b/src/backend/utils/init/miscinit.c
+@@ -374,8 +374,11 @@
+ 	 * Do not remove or weaken it.
+ 	 *
+ 	 * XXX can we safely enable this check on Windows?
++	 *
++	 * WASI has no file ownership (st_uid is always 0); pgmem runs every
++	 * process as one user.
+ 	 */
+-#if !defined(WIN32) && !defined(__CYGWIN__)
++#if !defined(WIN32) && !defined(__CYGWIN__) && !defined(__wasi__)
+ 	if (stat_buf.st_uid != geteuid())
+ 		ereport(FATAL,
+ 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),

@@ -1,0 +1,16 @@
+--- a/src/backend/commands/collationcmds.c
++++ b/src/backend/commands/collationcmds.c
+@@ -578,8 +578,11 @@
+ }
+ 
+ 
+-/* will we use "locale -a" in pg_import_system_collations? */
+-#if !defined(WIN32)
++/*
++ * will we use "locale -a" in pg_import_system_collations?  WASI has no
++ * "locale" program, and wasi-libc knows only the C and C.UTF-8 locales.
++ */
++#if !defined(WIN32) && !defined(__wasi__)
+ #define READ_LOCALE_A_OUTPUT
+ #endif
+ 

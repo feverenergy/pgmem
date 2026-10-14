@@ -1,0 +1,41 @@
+name: assets-check
+
+# Rebuilds the engine files from this repository's sources and compares
+# them with a pgmem-engine checkout. It takes a while, so it runs only
+# when started by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      engine-ref:
+        description: pgmem-engine branch, tag or commit to compare with
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  assets-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: pgmem
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: feverenergy/pgmem-engine
+          ref: ${{ inputs.engine-ref }}
+          path: pgmem-engine
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: pgmem/go.mod
+          cache-dependency-path: pgmem/go.sum
+      - name: Build the toolchain image
+        working-directory: pgmem
+        run: make toolchain CONTAINER=docker
+      - name: make assets-check
+        working-directory: pgmem
+        # The container writes build/out as this user, not root, so the
+        # host's later steps can write there too.
+        run: make assets-check CONTAINER=docker RUN_FLAGS="--user $(id -u):$(id -g) -e HOME=/tmp"

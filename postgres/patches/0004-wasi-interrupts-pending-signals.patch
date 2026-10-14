@@ -1,0 +1,26 @@
+--- a/src/include/miscadmin.h
++++ b/src/include/miscadmin.h
+@@ -109,7 +109,22 @@
+ extern void ProcessInterrupts(void);
+ 
+ /* Test whether an interrupt is pending */
+-#ifndef WIN32
++#if defined(__wasi__)
++/*
++ * pgmem runs signal handlers only when a host call returns. A backend
++ * computing without host calls sees a pending signal here instead: the
++ * kernel sets bits in the process's pending mask (pgmem_compat.h), and
++ * dispatching runs the handlers, which set InterruptPending. Every 4096th
++ * check also makes a host call, pgm.yield (PGMEM_CFI_POLL), so the host
++ * can stop the process and Go can stop the world without wazero's
++ * preemption.
++ */
++#define INTERRUPTS_PENDING_CONDITION() \
++	(PGMEM_CFI_POLL(), \
++	 unlikely(PGMEM_SIGNALS_DELIVERABLE()) ? \
++	 pgmem_signal_dispatch() : (void) 0, \
++	 unlikely(InterruptPending))
++#elif !defined(WIN32)
+ #define INTERRUPTS_PENDING_CONDITION() \
+ 	(unlikely(InterruptPending))
+ #else

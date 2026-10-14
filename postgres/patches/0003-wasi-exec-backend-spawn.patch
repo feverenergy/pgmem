@@ -1,0 +1,56 @@
+--- a/src/backend/postmaster/launch_backend.c
++++ b/src/backend/postmaster/launch_backend.c
+@@ -371,7 +371,31 @@
+ 	/* Insert temp file name after --forkchild argument */
+ 	argv[2] = tmpfilename;
+ 	argv[3] = NULL;
++
++#ifdef __wasi__
++
++	/*
++	 * pgmem has no fork: start the child as a new process running
++	 * postgres_exec_path, which inherits every fd not marked close-on-exec at
++	 * the same number. As fork_process does, the child starts with all
++	 * signals blocked (it inherits our mask) and stdio is flushed first.
++	 */
++	{
++		extern char **environ;
++		sigset_t	save_mask;
++		int			save_errno;
+ 
++		argv[0] = postgres_exec_path;
++		fflush(NULL);
++		sigprocmask(SIG_SETMASK, &BlockSig, &save_mask);
++		pid = pgmem_spawn(argv, environ, NULL, 0);
++		save_errno = errno;
++		if (pid < 0)
++			unlink(tmpfilename);
++		sigprocmask(SIG_SETMASK, &save_mask, NULL);
++		errno = save_errno;
++	}
++#else
+ 	/* Fire off execv in child */
+ 	if ((pid = fork_process()) == 0)
+ 	{
+@@ -384,6 +408,7 @@
+ 			exit(1);
+ 		}
+ 	}
++#endif
+ 
+ 	return pid;					/* Parent returns pid, or -1 on fork failure */
+ }
+@@ -896,7 +921,12 @@
+ 		exit(1);
+ 	}
+ 
+-	if (fread(&param, sizeof(param), 1, fp) != 1)
++	/*
++	 * Read only the fixed part: sizeof(param) also counts trailing padding
++	 * (on wasm32, 8 bytes after startup_data_len), which internal_forkexec
++	 * never wrote, so reading it would fail or eat startup data.
++	 */
++	if (fread(&param, SizeOfBackendParameters(0), 1, fp) != 1)
+ 	{
+ 		write_stderr("could not read from backend variables file \"%s\": %m\n", id);
+ 		exit(1);
