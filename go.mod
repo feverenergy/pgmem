@@ -7,8 +7,8 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/klauspost/compress v1.20.1
 	github.com/tetratelabs/wazero v1.12.1-0.20260829084255-f4779551afb4
-	golang.org/x/net v0.54.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/net v0.55.0
+	golang.org/x/sys v0.45.0
 )
 
 require (
