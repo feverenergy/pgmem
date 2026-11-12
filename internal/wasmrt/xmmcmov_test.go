@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tetratelabs/wazero/api"
+	"github.com/feverenergy/wazero/api"
 
 	"github.com/feverenergy/pgmem/internal/wasmrt"
 )

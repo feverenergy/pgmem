@@ -8,7 +8,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/tetratelabs/wazero/api"
+	"github.com/feverenergy/wazero/api"
 
 	"github.com/feverenergy/pgmem/internal/memfs"
 )

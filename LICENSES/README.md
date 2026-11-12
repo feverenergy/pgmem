@@ -26,7 +26,7 @@ The `.wasm` files under `internal/*/testdata/` and `postgres/compat/testdata/` a
 
 | Component | Version | License | Where used | License file (source of the text) |
 |---|---|---|---|---|
-| wazero | v1.12.1-0.20260829084255-f4779551afb4 (upstream `main`) | Apache-2.0 | The WebAssembly runtime | `wazero.txt` and `wazero-NOTICE.txt` (`LICENSE`, `NOTICE`, module cache) |
+| wazero | `github.com/feverenergy/wazero` v1.12.1-pgmem.3 (fork of upstream `main` f4779551afb4) | Apache-2.0 | The WebAssembly runtime | `wazero.txt` and `wazero-NOTICE.txt` (`LICENSE`, `NOTICE`, module cache; the fork leaves both unchanged) |
 | klauspost/compress | v1.20.1 | BSD-3-Clause | zstd decoding of the engine files (`zstd`, `fse`, `huff0`), and `mkassets` encoding | `klauspost-compress.txt` (`LICENSE`, module cache) |
 | klauspost/compress `internal/snapref` | in v1.20.1 | BSD-3-Clause (Snappy-Go Authors) | compiled into `zstd` | `klauspost-compress-snapref.txt` (`internal/snapref/LICENSE`) |
 | cespare/xxhash, in klauspost/compress `zstd/internal/xxhash` | in v1.20.1 | MIT | compiled into `zstd` | `klauspost-compress-xxhash.txt` (`zstd/internal/xxhash/LICENSE.txt`) |

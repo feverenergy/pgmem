@@ -1,7 +1,7 @@
 package kernel
 
 import (
-	"github.com/tetratelabs/wazero/experimental"
+	"github.com/feverenergy/wazero/experimental"
 
 	"github.com/feverenergy/pgmem/internal/memfs"
 	"github.com/feverenergy/pgmem/internal/vmem"

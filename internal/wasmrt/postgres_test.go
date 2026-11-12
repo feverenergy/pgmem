@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tetratelabs/wazero"
+	"github.com/feverenergy/wazero"
 
 	"github.com/feverenergy/pgmem/internal/wasmrt"
 	"github.com/feverenergy/pgmem/internal/wasmrt/wasmrttest"

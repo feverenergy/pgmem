@@ -7,9 +7,9 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/experimental"
-	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	"github.com/feverenergy/wazero"
+	"github.com/feverenergy/wazero/experimental"
+	"github.com/feverenergy/wazero/imports/wasi_snapshot_preview1"
 
 	"github.com/feverenergy/pgmem/internal/vmem"
 	"github.com/feverenergy/pgmem/internal/wasmrt"
