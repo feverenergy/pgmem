@@ -559,42 +559,64 @@ func (fs *FS) writeFile(path string, data []byte) wasiabi.Errno {
 	if int64(len(data)) > MaxFileSize {
 		return wasiabi.EFBIG
 	}
+	// Resolve the destination before copying data, so a write that is
+	// going to fail costs no copy.
+	n, err := fs.fileAt(path)
+	if err != wasiabi.ESUCCESS {
+		return err
+	}
 	var d fileData
 	d.resize(len(data))
 	d.writeAt(data, 0)
-	return fs.putFile(path, d)
+	fs.swapData(n, d)
+	return wasiabi.ESUCCESS
 }
 
 // putFile creates or replaces the regular file at path, creating missing
 // parent directories, and gives it the contents d. The file takes d's
 // pages, so the caller must not use d again.
 func (fs *FS) putFile(path string, d fileData) wasiabi.Errno {
-	switch {
-	case int64(d.size) > MaxFileSize:
+	if int64(d.size) > MaxFileSize {
 		return wasiabi.EFBIG
-	case len(path) > MaxPathLen:
-		return wasiabi.ENAMETOOLONG // before mkdirAll makes any parent
 	}
-	if err := fs.mkdirAll(parentPath(path)); err != wasiabi.ESUCCESS {
+	n, err := fs.fileAt(path)
+	if err != wasiabi.ESUCCESS {
 		return err
 	}
-	// Open without Trunc and swap the data in one hold of n.dmu, so a
-	// reader of an existing file sees the old contents or the new, never
-	// an empty file in between.
+	fs.swapData(n, d)
+	return wasiabi.ESUCCESS
+}
+
+// fileAt returns the regular file at path, creating it and any missing
+// parent directories. The caller holds mu's write lock.
+func (fs *FS) fileAt(path string) (*Node, wasiabi.Errno) {
+	if len(path) > MaxPathLen {
+		return nil, wasiabi.ENAMETOOLONG // before mkdirAll makes any parent
+	}
+	if err := fs.mkdirAll(parentPath(path)); err != wasiabi.ESUCCESS {
+		return nil, err
+	}
+	// Open without Trunc: swapData replaces the contents in one hold of
+	// n.dmu, so a reader of an existing file sees the old contents or the
+	// new, never an empty file in between.
 	n, err := fs.open(fs.root, path, OpenFlags{Create: true})
 	switch {
 	case err != wasiabi.ESUCCESS:
-		return err
+		return nil, err
 	case n.kind == KindDir:
-		return wasiabi.EISDIR
+		return nil, wasiabi.EISDIR
 	case n.kind != KindFile:
-		return wasiabi.EINVAL
+		return nil, wasiabi.EINVAL
 	}
+	return n, wasiabi.ESUCCESS
+}
+
+// swapData gives the regular file n the contents d and stamps it.
+func (fs *FS) swapData(n *Node, d fileData) {
 	n.dmu.Lock()
 	defer n.dmu.Unlock()
 	n.data = d
 	n.stamp(fs.now())
-	return wasiabi.ESUCCESS
 }
 
 // ReadFile returns a copy of the regular file at path. The error is a
