@@ -27,9 +27,12 @@ func (fs *FS) LoadTar(r io.Reader, at string) error {
 		if err != nil {
 			return fmt.Errorf("memfs: read tar: %w", err)
 		}
-		var data []byte
+		var data fileData
 		if h.Typeflag == tar.TypeReg {
-			if data, err = io.ReadAll(tr); err != nil {
+			if h.Size > MaxFileSize {
+				return fmt.Errorf("memfs: tar entry %s: %w", h.Name, wasiabi.EFBIG)
+			}
+			if data, err = readFileData(tr, int(h.Size)); err != nil {
 				return fmt.Errorf("memfs: read tar entry %s: %w", h.Name, err)
 			}
 		}
@@ -39,7 +42,29 @@ func (fs *FS) LoadTar(r io.Reader, at string) error {
 	}
 }
 
-func (fs *FS) loadEntry(h *tar.Header, data []byte, at string) error {
+// readFileData reads size bytes from r straight into the pages of a new
+// file, so each byte is copied once and nothing is allocated beyond the
+// pages the file keeps. Reading the entry with io.ReadAll and then
+// writeFile allocated about three times the bytes of a cluster image: a
+// slice grown in steps, then the pages. It allocates each page only when
+// its bytes arrive, so a corrupt header that claims a huge size fails at
+// the end of the data, having allocated no more than the data's size.
+func readFileData(r io.Reader, size int) (fileData, error) {
+	var d fileData
+	for d.size < size {
+		p := make([]byte, min(size-d.size, pageSize))
+		if _, err := io.ReadFull(r, p); err != nil {
+			return fileData{}, err
+		}
+		d.pages = append(d.pages, p)
+		d.size += len(p)
+	}
+	return d, nil
+}
+
+// loadEntry adds the entry h under at. For a regular file, the file takes
+// data.
+func (fs *FS) loadEntry(h *tar.Header, data fileData, at string) error {
 	name := under(at, h.Name)
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -48,7 +73,7 @@ func (fs *FS) loadEntry(h *tar.Header, data []byte, at string) error {
 	case tar.TypeDir:
 		err = fs.mkdirAll(name)
 	case tar.TypeReg:
-		err = fs.writeFile(name, data)
+		err = fs.putFile(name, data)
 	case tar.TypeLink:
 		if err = fs.mkdirAll(parentPath(name)); err == wasiabi.ESUCCESS {
 			err = fs.link(fs.root, under(at, h.Linkname), fs.root, name, false)
@@ -78,7 +103,14 @@ func under(at, p string) string {
 //   - a node seen again under another name is a TypeLink to its first name;
 //   - modes are 0700 for directories and 0600 for files;
 //   - owners are 0 and times are zero.
+//
+// The copy is of one moment in time. WriteTar holds gate's write lock, so
+// WriteAt, Truncate and SetTimes wait, and mu's read lock, so every tree
+// change waits too. That is why it reads file data without each node's
+// dmu: every writer of data holds gate's read lock or mu's write lock.
 func (fs *FS) WriteTar(w io.Writer, dir string) error {
+	fs.gate.Lock()
+	defer fs.gate.Unlock()
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	wk := walker{fs: fs}
@@ -123,7 +155,7 @@ func writeTarDir(tw *tar.Writer, d *Node, prefix string, seen map[*Node]string) 
 				break
 			}
 			seen[c] = full
-			h.Typeflag, h.Mode, h.Size = tar.TypeReg, 0o600, int64(len(c.data))
+			h.Typeflag, h.Mode, h.Size = tar.TypeReg, 0o600, int64(c.data.size)
 		default:
 			return fmt.Errorf("memfs: write tar: %s: unsupported node kind %d", full, c.kind)
 		}
@@ -137,8 +169,10 @@ func writeTarDir(tw *tar.Writer, d *Node, prefix string, seen map[*Node]string) 
 			}
 		case KindFile:
 			if h.Typeflag == tar.TypeReg {
-				if _, err := tw.Write(c.data); err != nil {
-					return fmt.Errorf("memfs: write tar %s: %w", full, err)
+				for _, pg := range c.data.pages {
+					if _, err := tw.Write(pg); err != nil {
+						return fmt.Errorf("memfs: write tar %s: %w", full, err)
+					}
 				}
 			}
 		}
