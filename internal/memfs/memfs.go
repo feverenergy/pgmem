@@ -527,8 +527,21 @@ func (fs *FS) WriteFile(path string, data []byte) error {
 }
 
 func (fs *FS) writeFile(path string, data []byte) wasiabi.Errno {
+	if int64(len(data)) > MaxFileSize {
+		return wasiabi.EFBIG
+	}
+	var d fileData
+	d.resize(len(data))
+	d.writeAt(data, 0)
+	return fs.putFile(path, d)
+}
+
+// putFile creates or replaces the regular file at path, creating missing
+// parent directories, and gives it the contents d. The file takes d's
+// pages, so the caller must not use d again.
+func (fs *FS) putFile(path string, d fileData) wasiabi.Errno {
 	switch {
-	case int64(len(data)) > MaxFileSize:
+	case int64(d.size) > MaxFileSize:
 		return wasiabi.EFBIG
 	case len(path) > MaxPathLen:
 		return wasiabi.ENAMETOOLONG // before mkdirAll makes any parent
@@ -543,8 +556,7 @@ func (fs *FS) writeFile(path string, data []byte) wasiabi.Errno {
 	if n.kind != KindFile {
 		return wasiabi.EINVAL
 	}
-	n.data.resize(len(data)) // open's Trunc left it empty
-	n.data.writeAt(data, 0)
+	n.data = d // open's Trunc left it empty
 	n.mtim = fs.now()
 	n.ctim = n.mtim
 	return wasiabi.ESUCCESS

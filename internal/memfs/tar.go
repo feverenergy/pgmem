@@ -27,9 +27,12 @@ func (fs *FS) LoadTar(r io.Reader, at string) error {
 		if err != nil {
 			return fmt.Errorf("memfs: read tar: %w", err)
 		}
-		var data []byte
+		var data fileData
 		if h.Typeflag == tar.TypeReg {
-			if data, err = io.ReadAll(tr); err != nil {
+			if h.Size > MaxFileSize {
+				return fmt.Errorf("memfs: tar entry %s: %w", h.Name, wasiabi.EFBIG)
+			}
+			if data, err = readFileData(tr, int(h.Size)); err != nil {
 				return fmt.Errorf("memfs: read tar entry %s: %w", h.Name, err)
 			}
 		}
@@ -39,7 +42,25 @@ func (fs *FS) LoadTar(r io.Reader, at string) error {
 	}
 }
 
-func (fs *FS) loadEntry(h *tar.Header, data []byte, at string) error {
+// readFileData reads size bytes from r straight into the pages of a new
+// file. The tar header gives the size, so each byte is copied once, and
+// nothing is allocated beyond the pages the file keeps. Reading the entry
+// with io.ReadAll and then writeFile allocated about three times the bytes
+// of a cluster image: a slice grown in steps, then the pages.
+func readFileData(r io.Reader, size int) (fileData, error) {
+	var d fileData
+	d.resize(size)
+	for _, p := range d.pages {
+		if _, err := io.ReadFull(r, p); err != nil {
+			return fileData{}, err
+		}
+	}
+	return d, nil
+}
+
+// loadEntry adds the entry h under at. For a regular file, the file takes
+// data.
+func (fs *FS) loadEntry(h *tar.Header, data fileData, at string) error {
 	name := under(at, h.Name)
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -48,7 +69,7 @@ func (fs *FS) loadEntry(h *tar.Header, data []byte, at string) error {
 	case tar.TypeDir:
 		err = fs.mkdirAll(name)
 	case tar.TypeReg:
-		err = fs.writeFile(name, data)
+		err = fs.putFile(name, data)
 	case tar.TypeLink:
 		if err = fs.mkdirAll(parentPath(name)); err == wasiabi.ESUCCESS {
 			err = fs.link(fs.root, under(at, h.Linkname), fs.root, name, false)
