@@ -4,7 +4,7 @@ Issues and pull requests are welcome. For a large change, open an issue first so
 
 ## Build and test
 
-You need Go 1.27. Most changes, such as to the kernel, pgtest or the Go API, need nothing else:
+You need Go 1.27.4. Most changes, such as to the kernel, pgtest or the Go API, need nothing else:
 
 ```sh
 go vet ./...

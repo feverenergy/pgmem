@@ -1,6 +1,6 @@
 module github.com/feverenergy/pgmem
 
-go 1.27
+go 1.27.4
 
 require (
 	github.com/feverenergy/pgmem-engine/pg17 v0.11.0
