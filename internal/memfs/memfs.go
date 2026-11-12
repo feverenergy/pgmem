@@ -48,7 +48,7 @@ type Node struct {
 	nlink            uint64
 	atim, mtim, ctim int64
 
-	data     []byte           // KindFile
+	data     fileData         // KindFile
 	children map[string]*Node // KindDir
 	parent   *Node            // KindDir; the root is its own parent
 	target   string           // KindSymlink
@@ -389,7 +389,7 @@ func (fs *FS) Stat(n *Node) Stat {
 	st := Stat{Ino: n.ino, Kind: n.kind, Nlink: n.nlink, Atim: n.atim, Mtim: n.mtim, Ctim: n.ctim}
 	switch n.kind {
 	case KindFile:
-		st.Size = int64(len(n.data))
+		st.Size = int64(n.data.size)
 	case KindSymlink:
 		st.Size = int64(len(n.target))
 	}
@@ -428,10 +428,10 @@ func (fs *FS) ReadAt(n *Node, p []byte, off int64) (int, wasiabi.Errno) {
 	}
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	if off >= int64(len(n.data)) {
+	if off >= int64(n.data.size) {
 		return 0, wasiabi.ESUCCESS
 	}
-	return copy(p, n.data[off:]), wasiabi.ESUCCESS
+	return n.data.readAt(p, int(off)), wasiabi.ESUCCESS
 }
 
 // IsURandom reports whether n is /dev/urandom's device node.
@@ -471,10 +471,10 @@ func (fs *FS) WriteAt(n *Node, p []byte, off int64) (int, wasiabi.Errno) {
 	}
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	if end := int(off) + len(p); end > len(n.data) {
-		n.data = grow(n.data, end)
+	if end := int(off) + len(p); end > n.data.size {
+		n.data.resize(end)
 	}
-	copy(n.data[off:], p)
+	n.data.writeAt(p, int(off))
 	n.mtim = fs.now()
 	n.ctim = n.mtim
 	return len(p), wasiabi.ESUCCESS
@@ -498,25 +498,9 @@ func (fs *FS) Truncate(n *Node, size int64) wasiabi.Errno {
 }
 
 func (fs *FS) truncate(n *Node, size int) {
-	switch {
-	case size == 0:
-		n.data = nil // release the memory
-	case size < len(n.data):
-		n.data = n.data[:size]
-	default:
-		n.data = grow(n.data, size)
-	}
+	n.data.resize(size)
 	n.mtim = fs.now()
 	n.ctim = n.mtim
-}
-
-// grow extends b to size bytes, and the new bytes are zero. Capacity past
-// len may still hold data from before a truncate, so grow clears it.
-func grow(b []byte, size int) []byte {
-	old := len(b)
-	b = slices.Grow(b, size-old)[:size]
-	clear(b[old:])
-	return b
 }
 
 // Readdir lists dir's entries sorted bytewise by name.
@@ -559,7 +543,8 @@ func (fs *FS) writeFile(path string, data []byte) wasiabi.Errno {
 	if n.kind != KindFile {
 		return wasiabi.EINVAL
 	}
-	n.data = slices.Clone(data)
+	n.data.resize(len(data)) // open's Trunc left it empty
+	n.data.writeAt(data, 0)
 	n.mtim = fs.now()
 	n.ctim = n.mtim
 	return wasiabi.ESUCCESS
@@ -580,7 +565,7 @@ func (fs *FS) ReadFile(path string) ([]byte, error) {
 	case n.kind != KindFile:
 		return nil, wasiabi.EINVAL
 	}
-	return slices.Clone(n.data), nil
+	return n.data.bytes(), nil
 }
 
 // mkdirAll creates the directory path and any missing parents.

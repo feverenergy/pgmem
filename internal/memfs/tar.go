@@ -123,7 +123,7 @@ func writeTarDir(tw *tar.Writer, d *Node, prefix string, seen map[*Node]string) 
 				break
 			}
 			seen[c] = full
-			h.Typeflag, h.Mode, h.Size = tar.TypeReg, 0o600, int64(len(c.data))
+			h.Typeflag, h.Mode, h.Size = tar.TypeReg, 0o600, int64(c.data.size)
 		default:
 			return fmt.Errorf("memfs: write tar: %s: unsupported node kind %d", full, c.kind)
 		}
@@ -137,8 +137,10 @@ func writeTarDir(tw *tar.Writer, d *Node, prefix string, seen map[*Node]string) 
 			}
 		case KindFile:
 			if h.Typeflag == tar.TypeReg {
-				if _, err := tw.Write(c.data); err != nil {
-					return fmt.Errorf("memfs: write tar %s: %w", full, err)
+				for _, pg := range c.data.pages {
+					if _, err := tw.Write(pg); err != nil {
+						return fmt.Errorf("memfs: write tar %s: %w", full, err)
+					}
 				}
 			}
 		}
