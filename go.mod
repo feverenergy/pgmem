@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/feverenergy/pgmem-engine/pg17 v0.11.0
-	github.com/feverenergy/wazero v1.12.1-pgmem.2
+	github.com/feverenergy/wazero v1.12.1-pgmem.3
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/klauspost/compress v1.20.4
 	golang.org/x/net v0.62.0
