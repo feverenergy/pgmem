@@ -49,6 +49,15 @@ pgmem changes PostgreSQL as little as it can. Most of the porting work lives out
 - A new or changed patch needs a row in the patch table in [docs/architecture.md](docs/architecture.md#the-patches) that says what it does and why the kernel or compat layer could not do it instead.
 - The engine's `PROVENANCE` records the sha256 of every patch and of the build sources, the compat layer included. So a change to any of them means rebuilding the engine, and `make assets-check` fails until you do.
 
+## Updating dependencies
+
+Before a release, `go list -m -u all` lists newer versions, and `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` lists known vulnerabilities pgmem's code reaches. Bump the direct dependencies in a pull request of their own, with `go get <module>@<version>` and `go mod tidy`, never a blind `go get -u`:
+
+- pgmem's `go.mod` sets the minimum versions for every module that imports pgmem. Bump for a fix, a security update or speed, not only because a release exists.
+- wazero stays at its pinned commit (see "The wazero pin" in [docs/architecture.md](docs/architecture.md#the-wazero-pin)). Moving it needs `TestZeroFillClears`, `TestXmmCMovFloatSelect`, `make regress` and a benchmark run on both CPUs.
+- A newer klauspost/compress may encode differently. Then `make assets-check` reports that only the compression differs, and the next engine release re-encodes with `make assets`.
+- Run `go test ./...` and `go test -race` on the root package, pgtest, kernel, wasi and memfs, and compare the benchmarks in `bench_test.go` and pgtest with the base branch.
+
 ## Style
 
 Run `gofmt`. Comments and docs say what the code does and why, in plain sentences. Match the surrounding code.
