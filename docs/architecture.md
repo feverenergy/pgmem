@@ -13,7 +13,7 @@ pgx --Dial--> in-memory conn --> kernel Unix socket --> postmaster (wasm instanc
                                                         memfs (shared data directory)
 ```
 
-`postgres.wasm` targets `wasm32-wasip1-threads` and is built with wasi-sdk 34. Stock [wazero](https://github.com/tetratelabs/wazero) compiles it once to native code. Every Postgres process is its own wazero instance of that compiled module, running in its own goroutine. That covers the postmaster, each backend, the checkpointer, the background writer and the WAL writer.
+`postgres.wasm` targets `wasm32-wasip1-threads` and is built with wasi-sdk 34. [wazero](https://github.com/tetratelabs/wazero), in pgmem's fork (see [The wazero fork](#the-wazero-fork)), compiles it once to native code. Every Postgres process is its own wazero instance of that compiled module, running in its own goroutine. That covers the postmaster, each backend, the checkpointer, the background writer and the WAL writer.
 
 A small Go kernel sits between those instances. It provides the parts of a Unix system that Postgres needs and WebAssembly lacks.
 
@@ -42,7 +42,7 @@ The guest imports `wasi_snapshot_preview1` and pgmem's own `pgm` module, which h
 
 `postgres/compat` is a C library linked into `postgres.wasm`. It fills in the POSIX calls wasi-libc lacks, such as `sigaction`, `kill`, sockets, `popen`, `setitimer`, SysV shared memory and semaphores. Most of them become `pgm` host calls. `postgres/overlay` adds a `wasi` platform template to the Postgres source tree.
 
-`setjmp` and `longjmp`, which `PG_TRY` and error handling use, compile to WebAssembly exception handling. Stock wazero supports it.
+`setjmp` and `longjmp`, which `PG_TRY` and error handling use, compile to WebAssembly exception handling. wazero supports it.
 
 ### Extensions
 
@@ -100,7 +100,7 @@ Postgres's depth checks measure the shadow stack in linear memory. wazero keeps 
 
 Patch 0008 makes every depth check reserve 256 bytes of shadow stack in its caller's frame. So each level of a recursion grows the shadow stack, and `max_stack_depth` bounds it. The cap is 512kB, against a native default of 2MB. In measurements that allows JSON nesting to about 2000 levels, nested expressions to about 690, and plpgsql recursion to 253 levels. Deeper input fails with `ERROR 54001` and the session lives on.
 
-Deep recursion also costs memory. wazero copies the engine stack for each active `PG_TRY`, and plpgsql holds two per level. So memory grows with the square of the depth, about 0.5 GB for a plpgsql recursion at the 253-level limit. A backend keeps its grown stack until an error returns to its main loop or the connection closes. Recycle pooled connections, or close a connection after a deliberately deep recursion.
+Deep recursion costs little memory. plpgsql holds two `PG_TRY` blocks per level, and stock wazero copied the whole engine stack on entering each, so memory grew with the square of the depth: a plpgsql recursion 250 levels deep allocated 1 GB and grew the process by 876 MiB. pgmem's wazero fork records an entry without copying the stack, and the same recursion allocates under 1 MiB and grows the process by 12 MiB (Apple M5 Pro). A backend keeps its grown engine stack until the connection closes.
 
 ## Engines and reproducible builds
 
@@ -152,13 +152,18 @@ A guard samples the test process's resident memory every 500 ms. Past `PGTEST_MA
 - **Windows.** It is not supported.
 - **Regression suite.** 222 of PostgreSQL's 225 regression tests pass. `select_parallel` differs because parallel query is off. `subscription` and `object_address` differ because logical replication is not linked.
 
-### The wazero pin
+### The wazero fork
 
-pgmem uses stock wazero, with no fork or local patch. It pins an untagged commit of upstream `main`, `v1.12.1-0.20260829084255-f4779551afb4`, for two reasons:
+pgmem runs on its own fork of wazero, [`github.com/feverenergy/wazero`](https://github.com/feverenergy/wazero), version `v1.12.1-pgmem.1`. The fork renames the module, so a module that depends on pgmem requires it under that path, with no `replace` directive, and it never conflicts with another wazero. Its base is the upstream `main` commit pgmem pinned before, `f4779551afb4`, for two reasons:
 
 - wazero v1.12.0's amd64 backend miscompiles some floating-point `select` instructions (wazero #2534, fixed by #2535). In `postgres.wasm` that changed query plans on amd64.
 - The next commit on `main`, from #2538, rewrote `memory.fill`. On amd64 CPUs without AVX2 it can leave nonzero bytes in memory that should be zeroed.
 
-The pinned commit has the first fix and predates the second change. `TestZeroFillClears` and `TestXmmCMovFloatSelect` guard both. pgmem will move to a tagged release once one has both fixes. A module that depends on pgmem inherits this pseudo-version.
+`TestZeroFillClears` and `TestXmmCMovFloatSelect` guard both. On top of that commit the fork carries two patches, described in its `FORK.md`:
+
+- **Buffered compilation cache reads.** Loading the compiled module from the file cache read each of `postgres.wasm`'s 16 000 function offsets with its own syscall, about 70 ms of CPU per test process when 18 start at once.
+- **Exception handlers without a stack copy.** Entering a `try_table`, which is each `PG_TRY`, copied the whole engine stack. In a downstream test suite those copies were 61% of all bytes allocated. A handler now records the stack position instead.
+
+Against stock wazero at the same commit, a downstream suite of 75 test binaries, 18 at a time, used 25.8% less summed test time and 27% less peak memory per process, `SELECT 1` round trips took 25% less time, and recycled test databases 36% less (Apple M5 Pro, interleaved runs, p < 0.001 each). pgmem will return to upstream wazero once a release has equivalent changes.
 
 wazero issue #2522 reports a use-after-free in exception handling. We checked `postgres.wasm`, and its exception code does not reach that path.

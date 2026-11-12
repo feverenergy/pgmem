@@ -3,6 +3,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/feverenergy/pgmem-engine/pg17 v0.11.0 h1:yVIKMb1uWyBJX8RKUWD/+wv1yCTyacwXt360PWsjhqE=
 github.com/feverenergy/pgmem-engine/pg17 v0.11.0/go.mod h1:WPXYUjl7ScVkS3SI9B9pRXFvmy996S4iIwabrFDJw7o=
+github.com/feverenergy/wazero v1.12.1-pgmem.1 h1:SQHmlHpiNVMn4l1bI2XF9P60DDIWkjuPjPLssVxElsU=
+github.com/feverenergy/wazero v1.12.1-pgmem.1/go.mod h1:hjRVqaTrl2OJ3MmbLgDXbR0E/ApSwtrwcsAY+YsOmes=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
@@ -20,8 +22,6 @@ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UV
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/tetratelabs/wazero v1.12.1-0.20260829084255-f4779551afb4 h1:HMAdbvgBsFARgA+67cxc7DYUhgQ75vJisiY4zXuOt88=
-github.com/tetratelabs/wazero v1.12.1-0.20260829084255-f4779551afb4/go.mod h1:LvKtzl2RqO4gyF27BiXU+nKAjcV8f38U+kP/q2vgxh0=
 golang.org/x/net v0.62.0 h1:18ELalfM5+XNRwzM2nYqXsZQ9ByS1uhj2O/U7+5jqRY=
 golang.org/x/net v0.62.0/go.mod h1:WgDCOTH8iwtB66T4/GfI94AHo/hhdb7Hah9NDseQfiI=
 golang.org/x/sync v0.24.0 h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=

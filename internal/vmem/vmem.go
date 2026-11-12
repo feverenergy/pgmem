@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/tetratelabs/wazero/experimental"
+	"github.com/feverenergy/wazero/experimental"
 )
 
 // commitChunk is how much address space becomes read-write at a time.

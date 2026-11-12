@@ -8,7 +8,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/tetratelabs/wazero/api"
+	"github.com/feverenergy/wazero/api"
 )
 
 // Signal numbers the kernel itself acts on, in wasi-libc's numbering.

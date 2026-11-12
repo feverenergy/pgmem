@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/sys"
+	"github.com/feverenergy/wazero/api"
+	"github.com/feverenergy/wazero/sys"
 
 	"github.com/feverenergy/pgmem/internal/wasiabi"
 )

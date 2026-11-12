@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/experimental"
-	"github.com/tetratelabs/wazero/sys"
+	"github.com/feverenergy/wazero"
+	"github.com/feverenergy/wazero/experimental"
+	"github.com/feverenergy/wazero/sys"
 
 	"github.com/feverenergy/pgmem/internal/memfs"
 	"github.com/feverenergy/pgmem/internal/vmem"

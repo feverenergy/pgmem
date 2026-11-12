@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
+	"github.com/feverenergy/wazero"
+	"github.com/feverenergy/wazero/api"
 	"golang.org/x/sys/cpu"
 
 	"github.com/feverenergy/pgmem/internal/wasmrt"

@@ -1,6 +1,6 @@
 # pgmem
 
-pgmem runs real PostgreSQL 17.11 inside your Go test process. Postgres is compiled to WebAssembly and runs on [wazero](https://github.com/tetratelabs/wazero), with a small Go kernel for processes, signals, shared memory and sockets. `pgmem.Start` gives you a server, and package `pgtest` gives each test its own migrated database.
+pgmem runs real PostgreSQL 17.11 inside your Go test process. Postgres is compiled to WebAssembly and runs on [wazero](https://github.com/tetratelabs/wazero) (pgmem's [fork](https://github.com/feverenergy/wazero), see below), with a small Go kernel for processes, signals, shared memory and sockets. `pgmem.Start` gives you a server, and package `pgtest` gives each test its own migrated database.
 
 ## Why
 
@@ -192,7 +192,7 @@ CI runs gofmt, `go vet` and every test on GitHub's Linux amd64, Linux arm64 and 
 - Locales are C and C.UTF-8 only.
 - Authentication is trust and every client is superuser. pgmem is for tests, not production.
 - Windows is not supported.
-- pgmem pins an untagged wazero commit, because v1.12.0 miscompiles some float code on amd64 and later `main` commits have a separate amd64 bug. Your module inherits that pin.
+- pgmem runs on its own wazero fork, `github.com/feverenergy/wazero`: an upstream commit plus two patches that make loading the compiled module and catching exceptions cheaper. Your module requires it through pgmem, under its own path, so it never conflicts with another wazero.
 
 [docs/architecture.md](docs/architecture.md#limitations) has the details.
 

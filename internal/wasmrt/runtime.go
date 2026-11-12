@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/experimental"
+	"github.com/feverenergy/wazero"
+	"github.com/feverenergy/wazero/api"
+	"github.com/feverenergy/wazero/experimental"
 )
 
 // Features are the WebAssembly features pgmem's modules use. They are
