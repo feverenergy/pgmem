@@ -43,17 +43,21 @@ func (fs *FS) LoadTar(r io.Reader, at string) error {
 }
 
 // readFileData reads size bytes from r straight into the pages of a new
-// file. The tar header gives the size, so each byte is copied once, and
-// nothing is allocated beyond the pages the file keeps. Reading the entry
-// with io.ReadAll and then writeFile allocated about three times the bytes
-// of a cluster image: a slice grown in steps, then the pages.
+// file, so each byte is copied once and nothing is allocated beyond the
+// pages the file keeps. Reading the entry with io.ReadAll and then
+// writeFile allocated about three times the bytes of a cluster image: a
+// slice grown in steps, then the pages. It allocates each page only when
+// its bytes arrive, so a corrupt header that claims a huge size fails at
+// the end of the data, having allocated no more than the data's size.
 func readFileData(r io.Reader, size int) (fileData, error) {
 	var d fileData
-	d.resize(size)
-	for _, p := range d.pages {
+	for d.size < size {
+		p := make([]byte, min(size-d.size, pageSize))
 		if _, err := io.ReadFull(r, p); err != nil {
 			return fileData{}, err
 		}
+		d.pages = append(d.pages, p)
+		d.size += len(p)
 	}
 	return d, nil
 }

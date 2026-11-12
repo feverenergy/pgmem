@@ -658,37 +658,38 @@ func (fs *FS) newNode(kind Kind) *Node {
 
 // addEntry names n in dir. The caller holds mu's write lock.
 func (fs *FS) addEntry(dir *Node, name string, n *Node) {
-	now := fs.now()
 	dir.children[name] = n
 	n.nlink++
 	if n.kind == KindDir {
 		n.parent = dir
 	}
-	n.setCtim(now)
-	dir.lockAndStamp(now)
+	fs.setCtim(n)
+	fs.lockAndStamp(dir)
 }
 
 // removeEntry removes the name of n in dir. n keeps its data and, if it is a
 // directory, its parent pointer.
 func (fs *FS) removeEntry(dir *Node, name string, n *Node) {
-	now := fs.now()
 	delete(dir.children, name)
 	n.nlink--
-	n.setCtim(now)
-	dir.lockAndStamp(now)
+	fs.setCtim(n)
+	fs.lockAndStamp(dir)
 }
 
-// setCtim sets n's status-change time under n.dmu.
-func (n *Node) setCtim(t int64) {
+// setCtim sets n's status-change time to now under n.dmu. It reads the
+// clock inside the lock, so a WriteAt on n can't stamp a later time in
+// between and leave ctim behind mtim.
+func (fs *FS) setCtim(n *Node) {
 	n.dmu.Lock()
-	n.ctim = t
+	n.ctim = fs.now()
 	n.dmu.Unlock()
 }
 
-// lockAndStamp takes n.dmu and stamps n with t.
-func (n *Node) lockAndStamp(t int64) {
+// lockAndStamp takes n.dmu and stamps n with the time now, read inside the
+// lock for the same reason as setCtim.
+func (fs *FS) lockAndStamp(n *Node) {
 	n.dmu.Lock()
-	n.stamp(t)
+	n.stamp(fs.now())
 	n.dmu.Unlock()
 }
 
