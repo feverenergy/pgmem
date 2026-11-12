@@ -3,6 +3,8 @@ package memfs_test
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
+	"runtime"
 	"testing"
 
 	"github.com/feverenergy/pgmem/internal/memfs"
@@ -127,5 +129,23 @@ func TestLoadTarContainsNamesAndRejectsOtherTypes(t *testing.T) {
 	}
 	if err := fs.WriteFile("/pg/escape/x", nil); err != wasiabi.ENOTDIR {
 		t.Fatalf("WriteFile through a file: %v", err)
+	}
+}
+
+// TestWriteFileFailsBeforeCopying writes a large buffer to a path that is a
+// directory. WriteFile must fail without copying the buffer first.
+func TestWriteFileFailsBeforeCopying(t *testing.T) {
+	fs := memfs.New()
+	must(t, fs.Mkdir(fs.Root(), "/d"))
+	data := make([]byte, 32<<20)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	err := fs.WriteFile("/d", data)
+	runtime.ReadMemStats(&after)
+	if !errors.Is(err, wasiabi.EISDIR) {
+		t.Fatalf("WriteFile to a directory: %v, want EISDIR", err)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 4<<20 {
+		t.Fatalf("WriteFile allocated %d MiB before failing", alloc>>20)
 	}
 }
