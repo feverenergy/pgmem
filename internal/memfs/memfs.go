@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/feverenergy/pgmem/internal/wasiabi"
@@ -40,15 +41,20 @@ const (
 // Node is a file, directory, symlink or device. Its fields are private, so
 // use FS methods. A Node stays valid after its last name is removed.
 type Node struct {
-	// ino, kind and dev never change. FS.mu guards everything else.
+	// ino, kind and dev never change.
 	ino  uint64
 	kind Kind
 	dev  device
 
-	nlink            uint64
+	// dmu guards data and the times. A caller that holds FS.mu takes dmu
+	// inside it, never the other way round, and never holds two nodes'
+	// dmu at once.
+	dmu              sync.RWMutex
+	data             fileData // KindFile
 	atim, mtim, ctim int64
 
-	data     fileData         // KindFile
+	// FS.mu guards the rest.
+	nlink    uint64
 	children map[string]*Node // KindDir
 	parent   *Node            // KindDir; the root is its own parent
 	target   string           // KindSymlink
@@ -79,14 +85,23 @@ type OpenFlags struct {
 	NoFollow  bool // fail with ELOOP if the last component is a symlink
 }
 
-// FS is an in-memory file tree. One RWMutex guards the whole tree and all
-// file data. Read-only operations take the read lock, and everything else
-// takes the write lock.
+// FS is an in-memory file tree. mu guards the tree itself: names, links,
+// parents and symlink targets. Read-only tree operations take its read
+// lock, and the rest take its write lock. File data and times have their
+// own lock per node (Node.dmu), so processes copying different files, as
+// CREATE DATABASE does under parallel tests, do not take turns on mu for
+// every read and write.
+//
+// gate keeps WriteTar's copy at one moment in time. WriteAt, Truncate and
+// SetTimes, which change a node without mu's write lock, hold gate's read
+// lock. WriteTar holds gate's write lock and mu's read lock, so every
+// change waits until the copy is done. The lock order is gate, mu, dmu.
 type FS struct {
+	gate    sync.RWMutex
 	mu      sync.RWMutex
 	root    *Node
-	lastIno uint64 // inode numbers are never reused
-	clock   int64  // last time handed out by now
+	lastIno uint64       // inode numbers are never reused
+	clock   atomic.Int64 // last time handed out by now
 }
 
 // New returns a tree holding the root plus /dev/null, /dev/zero and
@@ -386,6 +401,8 @@ func (fs *FS) Readlink(dir *Node, path string) (string, wasiabi.Errno) {
 func (fs *FS) Stat(n *Node) Stat {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
+	n.dmu.RLock()
+	defer n.dmu.RUnlock()
 	st := Stat{Ino: n.ino, Kind: n.kind, Nlink: n.nlink, Atim: n.atim, Mtim: n.mtim, Ctim: n.ctim}
 	switch n.kind {
 	case KindFile:
@@ -402,8 +419,10 @@ func (fs *FS) SetTimes(n *Node, atim, mtim *int64) {
 	if atim == nil && mtim == nil {
 		return
 	}
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	fs.gate.RLock()
+	defer fs.gate.RUnlock()
+	n.dmu.Lock()
+	defer n.dmu.Unlock()
 	if atim != nil {
 		n.atim = *atim
 	}
@@ -426,8 +445,8 @@ func (fs *FS) ReadAt(n *Node, p []byte, off int64) (int, wasiabi.Errno) {
 	if off < 0 {
 		return 0, wasiabi.EINVAL
 	}
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
+	n.dmu.RLock()
+	defer n.dmu.RUnlock()
 	if off >= int64(n.data.size) {
 		return 0, wasiabi.ESUCCESS
 	}
@@ -469,15 +488,22 @@ func (fs *FS) WriteAt(n *Node, p []byte, off int64) (int, wasiabi.Errno) {
 	case off > MaxFileSize-int64(len(p)):
 		return 0, wasiabi.EFBIG
 	}
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	fs.gate.RLock()
+	defer fs.gate.RUnlock()
+	n.dmu.Lock()
+	defer n.dmu.Unlock()
 	if end := int(off) + len(p); end > n.data.size {
 		n.data.resize(end)
 	}
 	n.data.writeAt(p, int(off))
-	n.mtim = fs.now()
-	n.ctim = n.mtim
+	n.stamp(fs.now())
 	return len(p), wasiabi.ESUCCESS
+}
+
+// stamp sets the modification and status-change times to t. The caller
+// holds n.dmu.
+func (n *Node) stamp(t int64) {
+	n.mtim, n.ctim = t, t
 }
 
 // Truncate sets n's size, zero-filling when it grows. A size over
@@ -491,16 +517,19 @@ func (fs *FS) Truncate(n *Node, size int64) wasiabi.Errno {
 	case size > MaxFileSize:
 		return wasiabi.EFBIG
 	}
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	fs.gate.RLock()
+	defer fs.gate.RUnlock()
 	fs.truncate(n, int(size))
 	return wasiabi.ESUCCESS
 }
 
+// truncate sets n's size and stamps it in one hold of n.dmu. Truncate
+// calls it under gate, and open calls it under mu's write lock.
 func (fs *FS) truncate(n *Node, size int) {
+	n.dmu.Lock()
+	defer n.dmu.Unlock()
 	n.data.resize(size)
-	n.mtim = fs.now()
-	n.ctim = n.mtim
+	n.stamp(fs.now())
 }
 
 // Readdir lists dir's entries sorted bytewise by name.
@@ -549,16 +578,22 @@ func (fs *FS) putFile(path string, d fileData) wasiabi.Errno {
 	if err := fs.mkdirAll(parentPath(path)); err != wasiabi.ESUCCESS {
 		return err
 	}
-	n, err := fs.open(fs.root, path, OpenFlags{Create: true, Trunc: true})
-	if err != wasiabi.ESUCCESS {
+	// Open without Trunc and swap the data in one hold of n.dmu, so a
+	// reader of an existing file sees the old contents or the new, never
+	// an empty file in between.
+	n, err := fs.open(fs.root, path, OpenFlags{Create: true})
+	switch {
+	case err != wasiabi.ESUCCESS:
 		return err
-	}
-	if n.kind != KindFile {
+	case n.kind == KindDir:
+		return wasiabi.EISDIR
+	case n.kind != KindFile:
 		return wasiabi.EINVAL
 	}
-	n.data = d // open's Trunc left it empty
-	n.mtim = fs.now()
-	n.ctim = n.mtim
+	n.dmu.Lock()
+	defer n.dmu.Unlock()
+	n.data = d
+	n.stamp(fs.now())
 	return wasiabi.ESUCCESS
 }
 
@@ -577,6 +612,8 @@ func (fs *FS) ReadFile(path string) ([]byte, error) {
 	case n.kind != KindFile:
 		return nil, wasiabi.EINVAL
 	}
+	n.dmu.RLock()
+	defer n.dmu.RUnlock()
 	return n.data.bytes(), nil
 }
 
@@ -619,16 +656,16 @@ func (fs *FS) newNode(kind Kind) *Node {
 	return n
 }
 
-// addEntry names n in dir.
+// addEntry names n in dir. The caller holds mu's write lock.
 func (fs *FS) addEntry(dir *Node, name string, n *Node) {
 	now := fs.now()
 	dir.children[name] = n
 	n.nlink++
-	n.ctim = now
 	if n.kind == KindDir {
 		n.parent = dir
 	}
-	dir.mtim, dir.ctim = now, now
+	n.setCtim(now)
+	dir.lockAndStamp(now)
 }
 
 // removeEntry removes the name of n in dir. n keeps its data and, if it is a
@@ -637,19 +674,37 @@ func (fs *FS) removeEntry(dir *Node, name string, n *Node) {
 	now := fs.now()
 	delete(dir.children, name)
 	n.nlink--
-	n.ctim = now
-	dir.mtim, dir.ctim = now, now
+	n.setCtim(now)
+	dir.lockAndStamp(now)
 }
 
-// now returns the current time, forced to move strictly forward. Callers
-// hold the write lock.
+// setCtim sets n's status-change time under n.dmu.
+func (n *Node) setCtim(t int64) {
+	n.dmu.Lock()
+	n.ctim = t
+	n.dmu.Unlock()
+}
+
+// lockAndStamp takes n.dmu and stamps n with t.
+func (n *Node) lockAndStamp(t int64) {
+	n.dmu.Lock()
+	n.stamp(t)
+	n.dmu.Unlock()
+}
+
+// now returns the current time, forced to move strictly forward across
+// every caller, whichever lock it holds.
 func (fs *FS) now() int64 {
-	t := time.Now().UnixNano()
-	if t <= fs.clock {
-		t = fs.clock + 1
+	for {
+		last := fs.clock.Load()
+		t := time.Now().UnixNano()
+		if t <= last {
+			t = last + 1
+		}
+		if fs.clock.CompareAndSwap(last, t) {
+			return t
+		}
 	}
-	fs.clock = t
-	return t
 }
 
 // errOf turns an errno into an error that is nil on success.

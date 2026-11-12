@@ -99,7 +99,14 @@ func under(at, p string) string {
 //   - a node seen again under another name is a TypeLink to its first name;
 //   - modes are 0700 for directories and 0600 for files;
 //   - owners are 0 and times are zero.
+//
+// The copy is of one moment in time. WriteTar holds gate's write lock, so
+// WriteAt, Truncate and SetTimes wait, and mu's read lock, so every tree
+// change waits too. That is why it reads file data without each node's
+// dmu: every writer of data holds gate's read lock or mu's write lock.
 func (fs *FS) WriteTar(w io.Writer, dir string) error {
+	fs.gate.Lock()
+	defer fs.gate.Unlock()
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	wk := walker{fs: fs}
