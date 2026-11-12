@@ -154,7 +154,7 @@ A guard samples the test process's resident memory every 500 ms. Past `PGTEST_MA
 
 ### The wazero fork
 
-pgmem runs on its own fork of wazero, [`github.com/feverenergy/wazero`](https://github.com/feverenergy/wazero), version `v1.12.1-pgmem.1`. The fork renames the module, so a module that depends on pgmem requires it under that path, with no `replace` directive, and it never conflicts with another wazero. Its base is the upstream `main` commit pgmem pinned before, `f4779551afb4`, for two reasons:
+pgmem runs on its own fork of wazero, [`github.com/feverenergy/wazero`](https://github.com/feverenergy/wazero), version `v1.12.1-pgmem.2`. The fork renames the module, so a module that depends on pgmem requires it under that path, with no `replace` directive, and it never conflicts with another wazero. Its base is the upstream `main` commit pgmem pinned before, `f4779551afb4`, for two reasons:
 
 - wazero v1.12.0's amd64 backend miscompiles some floating-point `select` instructions (wazero #2534, fixed by #2535). In `postgres.wasm` that changed query plans on amd64.
 - The next commit on `main`, from #2538, rewrote `memory.fill`. On amd64 CPUs without AVX2 it can leave nonzero bytes in memory that should be zeroed.
