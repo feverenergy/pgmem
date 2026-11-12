@@ -14,7 +14,7 @@ pgmem runs real PostgreSQL 17.11 inside your Go test process. Postgres is compil
 go get github.com/feverenergy/pgmem
 ```
 
-pgmem needs Go 1.27 or later.
+pgmem needs Go 1.27.4 or later.
 
 ## Quick start
 
@@ -198,7 +198,7 @@ CI runs gofmt, `go vet` and every test on GitHub's Linux amd64, Linux arm64 and 
 
 ## Building from source
 
-The engine module holds the built files, so you only need this to change Postgres, the patches or the build. You need Go 1.27 and Podman, or Docker with `CONTAINER=docker`. [CONTRIBUTING.md](CONTRIBUTING.md) has the workflow and the patch policy.
+The engine module holds the built files, so you only need this to change Postgres, the patches or the build. You need Go 1.27.4 and Podman, or Docker with `CONTAINER=docker`. [CONTRIBUTING.md](CONTRIBUTING.md) has the workflow and the patch policy.
 
 ```sh
 make toolchain         # build the pinned toolchain image for this CPU, once
